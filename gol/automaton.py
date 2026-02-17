@@ -26,7 +26,6 @@ def step_torus(prev: np.ndarray) -> np.ndarray:
     n, m = prev.shape
     nxt = np.zeros_like(prev, dtype=np.uint8)
 
-    # For each cell, count 8 neighbors using wrap-around indexing
     for i in range(n):
         im1 = (i - 1) % n
         ip1 = (i + 1) % n
@@ -42,10 +41,8 @@ def step_torus(prev: np.ndarray) -> np.ndarray:
 
             cell = prev[i, j]
             if cell == 1:
-                # Survives with 2 or 3 neighbors
                 nxt[i, j] = 1 if (neighbors == 2 or neighbors == 3) else 0
             else:
-                # Born with exactly 3 neighbors
                 nxt[i, j] = 1 if neighbors == 3 else 0
 
     return nxt
