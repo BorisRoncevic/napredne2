@@ -1,178 +1,82 @@
-* {
-  box-sizing: border-box;
-}
 
-body {
-  margin: 0;
-  font-family: Arial, sans-serif;
-}
+  import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 
-.login-frame {
-  min-height: 100vh;
-  width: 100%;
+type CustomAxiosRequestConfig = InternalAxiosRequestConfig & {
+  _retry?: boolean;
+};
 
-  display: flex;
-  align-items: center;
-  justify-content: center;
+type RefreshResponse = {
+  accessToken: string;
+  refreshToken?: string;
+};
 
-  padding-top: 64px;
-  padding-bottom: 64px;
+export const publicApi = axios.create({
+  baseURL: "http://localhost:8080/api",
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
 
-  background-color: rgba(37, 37, 37, 0.3);
-  backdrop-filter: blur(8px);
+export const api = axios.create({
+  baseURL: "http://localhost:8080/api",
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
 
-  /* Ako imaš background sliku, ubaci je ovde */
-  background-image:
-    linear-gradient(rgba(37, 37, 37, 0.3), rgba(37, 37, 37, 0.3)),
-    url("/parking-bg.jpg");
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-}
+// 1. Svakom protected requestu dodaj access token
+api.interceptors.request.use((config) => {
+  const accessToken = localStorage.getItem("accessToken");
 
-.login-modal {
-  width: 600px;
-  min-height: 529px;
+  if (accessToken) {
+    config.headers.Authorization = `Bearer ${accessToken}`;
+  }
 
-  display: flex;
-  flex-direction: column;
-  gap: 80px;
+  return config;
+});
 
-  padding: 16px 32px 32px 32px;
+// 2. Ako access token istekne, probaj refresh
+api.interceptors.response.use(
+  (response) => response,
 
-  background-color: rgba(37, 37, 37, 0.85);
-  border: 2px solid #ffffff;
-  border-radius: 16px;
+  async (error: AxiosError) => {
+    const originalRequest = error.config as CustomAxiosRequestConfig;
 
-  box-shadow: 0 4px 4px rgba(0, 0, 0, 0.25);
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+      originalRequest._retry = true;
 
-  color: #ffffff;
-}
+      try {
+        const refreshToken = localStorage.getItem("refreshToken");
 
-.login-modal-header {
-  width: 100%;
-  height: 40px;
+        if (!refreshToken) {
+          throw new Error("No refresh token");
+        }
 
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
+        const res = await publicApi.post<RefreshResponse>("/auth/refresh", {
+          refreshToken,
+        });
 
-.login-modal-header h1 {
-  margin: 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: #ffffff;
-}
+        const newAccessToken = res.data.accessToken;
 
-.login-modal-body {
-  width: 100%;
+        localStorage.setItem("accessToken", newAccessToken);
 
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
+        if (res.data.refreshToken) {
+          localStorage.setItem("refreshToken", res.data.refreshToken);
+        }
 
-.form-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
+        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
 
-.form-field label {
-  font-size: 14px;
-  font-weight: 600;
-  color: #ffffff;
-}
+        return api(originalRequest);
+      } catch (refreshError) {
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("refreshToken");
 
-.form-field input {
-  width: 100%;
-  height: 48px;
+        window.location.href = "/login";
 
-  border: 2px solid #ffffff;
-  border-radius: 8px;
+        return Promise.reject(refreshError);
+      }
+    }
 
-  background-color: transparent;
-  color: #ffffff;
-
-  padding: 0 14px;
-
-  font-size: 16px;
-  outline: none;
-}
-
-.form-field input:focus {
-  border-color: #7effc6;
-}
-
-.password-input-wrapper {
-  position: relative;
-  width: 100%;
-}
-
-.password-input-wrapper input {
-  padding-right: 48px;
-}
-
-.password-toggle {
-  position: absolute;
-  top: 50%;
-  right: 12px;
-
-  transform: translateY(-50%);
-
-  width: 32px;
-  height: 32px;
-
-  border: none;
-  background: transparent;
-
-  color: #ffffff;
-  cursor: pointer;
-}
-
-.login-modal-footer {
-  width: 288px;
-  height: 35px;
-
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-
-  align-self: center;
-}
-
-.login-button {
-  width: 288px;
-  height: 35px;
-  max-width: 288px;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  padding: 8px 64px;
-
-  border: none;
-  border-radius: 24px;
-
-  background-color: #7effc6;
-  color: #252525;
-
-  font-size: 14px;
-  font-weight: 600;
-
-  cursor: pointer;
-}
-
-.login-button:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.login-error {
-  margin: -50px 0 0 0;
-  color: #ff8a8a;
-  font-size: 14px;
-  text-align: center;
-}
+    return Promise.reject(error);
+  }
+);
